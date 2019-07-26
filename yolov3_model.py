@@ -1,12 +1,16 @@
 import tensorflow as tf
 import yaml
 import numpy as np
+import re
 
 
 from tensorflow import keras
-from data_loader import input_fn
+from data_loader import input_fn, input_fn_v2
+
 
 from model import model
+
+tf.logging.set_verbosity(tf.logging.INFO)
 
 
 def yolov3_model(features, labels, mode, params):
@@ -67,7 +71,7 @@ def yolov3_model(features, labels, mode, params):
 
 
 if __name__ == "__main__":
-
+    tf.log
     strategy = tf.distribute.MirroredStrategy()
     config_file = open("./config/yolov3.yaml")
     config = yaml.load(config_file)
@@ -77,7 +81,7 @@ if __name__ == "__main__":
     # session_configs = tf.ConfigProto(allow_soft_placement=True)
     # session_configs.gpu_options.allow_growth = True
     Config = tf.estimator.RunConfig(train_distribute=strategy,
-                                    log_step_count_steps=100, save_checkpoints_steps=2000,
+                                    log_step_count_steps=100, save_checkpoints_steps=500,
                                     eval_distribute=strategy, save_summary_steps=500)
     estimator = tf.estimator.Estimator(model_fn=yolov3_model, model_dir=config["model_dir"],
                                        config=Config, params=config)
@@ -91,7 +95,7 @@ if __name__ == "__main__":
                                                                  config["batch_size"]), throttle_secs=100)
     tf.estimator.train_and_evaluate(estimator, train_spec=train_spec, eval_spec=eval_spec)
 
-
+    """
     is_train = True
     eager = False
     params = config
@@ -101,21 +105,29 @@ if __name__ == "__main__":
     lr = params["learning_rate"]
     image_size = params["image_size"]
     key_prefix = "grids_{}"
-    dataset = input_fn(config["train_files"],
+    strategy = tf.distribute.MirroredStrategy()
+    with strategy.scope():
+        input = keras.Input([None, None, 3])
+        output_0, output_1, output_2 = model.YoloV3(input, anchors, masks, classes, is_train)
+        yolo_model = keras.Model(inputs=input, outputs=[output_0, output_1, output_2])
+        optimizer = tf.keras.optimizers.Adam(lr=params["learning_rate"])
+        loss = [model.YoloLoss(anchors[mask], classes) for mask in masks]
+        yolo_model.compile(optimizer=optimizer, loss=loss, run_eagerly=False)
+    filename = "/home/admin-seu/hugh/yolov3-tf2/data_native/train.txt"
+    info = []
+    for ele in open(filename).readlines():
+        ele = re.sub(",", " ", ele.strip())
+        info.append(ele.split(" "))
+    dataset = input_fn_v2(tf.convert_to_tensor(info),
                        config["anchors"], config["masks"],
                        config["classes"], config["image_size"],
                        config["batch_size"])
-    eval_dataset = input_fn(config["eval_files"],
+    eval_dataset = input_fn_v2(tf.convert_to_tensor(info),
                             config["anchors"], config["masks"],
                             config["classes"], config["image_size"],
                             config["batch_size"])
-    # with strategy.scope():
-    input = keras.Input([None, None, 3])
-    output_0, output_1, output_2 = model.YoloV3(input, anchors, masks, classes, is_train)
-    yolo_model = keras.Model(inputs=input, outputs=[output_0, output_1, output_2])
-    optimizer = tf.keras.optimizers.Adam(lr=params["learning_rate"])
-    loss = [model.YoloLoss(anchors[mask], classes) for mask in masks]
-    yolo_model.compile(optimizer=optimizer, loss=loss, run_eagerly=False)
+    # for ele in dataset:
+    #     print(ele)
     if eager:
         for features in dataset:
             with tf.GradientTape() as tape:
@@ -146,6 +158,7 @@ if __name__ == "__main__":
         ]
         history = yolo_model.fit(dataset,
                             epochs=5,
-                            callbacks=callbacks)
+                            callbacks=callbacks,)
         print(history)
+    """
 

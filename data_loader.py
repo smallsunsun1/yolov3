@@ -6,8 +6,7 @@ import os
 
 def transform_img_and_boxes(lines, target_size=(416, 416)):
     """
-
-    :param imagename: 图片文件路径
+    :param imagename:
     :param boxes: [N x 4]  x0, y0, x1, y1
     :param target_size:
     :return:
@@ -87,15 +86,16 @@ def transform_targets_for_output(y_true, grid_size, anchor_idxs, classes):
 def split_line(lines):
     lines = tf.strings.regex_replace(lines, ",", " ")
     lines = tf.strings.split(lines, " ")
-    lines = lines.to_tensor("0")
+    # lines = lines.to_tensor("0")
     # lines = tf.sparse.to_dense(lines.indices, lines.dense_shape, lines.values, default_value="0")
+    lines = tf.sparse.to_dense(lines, default_value="0")
     return lines
 
 
 def parse_lines(lines, target_size):
     images, bboxes = tf.map_fn(lambda x: transform_img_and_boxes(x, target_size), elems=lines,
                                dtype=(tf.float32, tf.float32), parallel_iterations=4, infer_shape=False)
-    images.set_shape([None, target_size[0], target_size[1], 3])
+    # images.set_shape([None, target_size[0], target_size[1], 3])
     return images, bboxes
 
 
@@ -184,6 +184,9 @@ def wrap_dict(image, args):
         features["grids_{}".format(i)] = args[i]
     return features
 
+def scale(x):
+    # x.set_shape([4, 416, 416, 3])
+    return x / 255.0
 
 def input_fn(filenames, anchors, anchor_masks, classes, target_size=(416, 416), batch_size=4, pad_box_length=20):
     dataset = tf.data.TextLineDataset(filenames)
@@ -191,8 +194,19 @@ def input_fn(filenames, anchors, anchor_masks, classes, target_size=(416, 416), 
     dataset = dataset.batch(batch_size)
     dataset = dataset.map(split_line, num_parallel_calls=4)
     dataset = dataset.map(lambda x: parse_lines(x, target_size), 4)
-    dataset = dataset.map(lambda x, y: (x / 255.0, transform_targets(y, anchors, anchor_masks, classes)), 4)
+    dataset = dataset.map(lambda x, y: (scale(x), transform_targets(y, anchors, anchor_masks, classes)), 4)
     dataset = dataset.map(wrap_dict, 4)
+    dataset = dataset.prefetch(-1)
+    return dataset
+
+def input_fn_v2(infos, anchors, anchor_masks, classes, target_size=(416, 416), batch_size=4, pad_box_length=20):
+    dataset = tf.data.Dataset.from_tensor_slices(infos)
+    dataset = dataset.shuffle(500)
+    dataset = dataset.batch(batch_size)
+    # dataset = dataset.map(split_line, num_parallel_calls=4)
+    dataset = dataset.map(lambda x: parse_lines(x, target_size), 4)
+    dataset = dataset.map(lambda x, y: (scale(x), transform_targets(y, anchors, anchor_masks, classes)), 4)
+    # dataset = dataset.map(wrap_dict, 4)
     dataset = dataset.prefetch(-1)
     return dataset
 
@@ -206,10 +220,11 @@ if __name__ == "__main__":
     output_dir = "/home/admin-seu/hugh/yolov3-tf2/temp_file"
     dataset = input_fn(filename, yolo_anchors, yolo_anchor_masks, 2, batch_size=4)
     for idx, ele in enumerate(dataset):
-        print(tf.where(tf.equal(ele["grids_0"][:, :, :, :, 4], 1)))
-        print(tf.where(tf.equal(ele["grids_1"][:, :, :, :, 4], 1)))
-        print(tf.where(tf.equal(ele["grids_2"][:, :, :, :, 4], 1)))
-        print("stop")
+        print(dataset.output_shapes)
+        # print(tf.where(tf.equal(ele["grids_0"][:, :, :, :, 4], 1)))
+        # print(tf.where(tf.equal(ele["grids_1"][:, :, :, :, 4], 1)))
+        # print(tf.where(tf.equal(ele["grids_2"][:, :, :, :, 4], 1)))
+        # print("stop")
         # image = tf.cast(ele[0], tf.uint8).numpy()[0]
         # boxes = ele[1]
         # print(ele)

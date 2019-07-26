@@ -3,16 +3,40 @@ from tensorflow import keras
 from .util import broadcast_iou
 
 
+def group_norm(x, G=32, esp=1e-5):
+    x = tf.transpose(x, [0, 3, 1, 2])
+    x_shape = tf.shape(x)
+    N = x_shape[0]
+    C = x_shape[1]
+    H = x_shape[2]
+    W = x_shape[3]
+    G = tf.minimum(G, C)
+    x = tf.reshape(x, [-1, G, C // G, H, W])
+    mean, var = tf.nn.moments(x, [2, 3, 4], keepdims=True)
+    x = (x - mean) / tf.sqrt(var + esp)
+    # per channel gamma and beta
+    gamma = tf.Variable(tf.ones(shape=[C]), dtype=tf.float32, name='gamma')
+    beta = tf.Variable(tf.ones(shape=[C]), dtype=tf.float32, name='beta')
+    gamma = tf.reshape(gamma, [1, C, 1, 1])
+    beta = tf.reshape(beta, [1, C, 1, 1])
+
+    output = tf.reshape(x, [-1, C, H, W]) * gamma + beta
+    # tranpose: [bs, c, h, w, c] to [bs, h, w, c] following the paper
+    output = tf.transpose(output, [0, 2, 3, 1])
+    return output
+
+
 def DarknetConv(x, filters, size, strides=1, batch_norm=True):
     if strides == 1:
         padding = "same"
     else:
-        x = tf.pad(x, [[0, 0], [1, 0], [1, 0],[0, 0]])
+        x = keras.layers.ZeroPadding2D(((1, 0), (1, 0)))(x)
         # x = keras.layers.ZeroPadding2D(((1, 0), (1, 0)))(x)
         padding = "valid"
     x = keras.layers.Conv2D(filters, size,
                          strides, padding)(x)
     if batch_norm:
+        x = group_norm(x, 32)
         x = keras.layers.BatchNormalization()(x)
         x = keras.layers.LeakyReLU(0.1)(x)
     return x
