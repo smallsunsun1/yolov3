@@ -4,7 +4,7 @@ import cv2
 import os
 
 
-def transform_img_and_boxes(lines, target_size=(416, 416)):
+def transform_img_and_boxes(lines, target_size=(416, 416), training=True):
     """
     :param imagename:
     :param boxes: [N x 4]  x0, y0, x1, y1
@@ -37,6 +37,32 @@ def transform_img_and_boxes(lines, target_size=(416, 416)):
     box_r = (boxes[:, 2] * tf.cast(img_w, tf.float32) * scale + tf.cast(pad_w_left, tf.float32)) / target_w
     box_t = (boxes[:, 1] * tf.cast(img_h, tf.float32) * scale + tf.cast(pad_h_top, tf.float32)) / target_h
     box_b = (boxes[:, 3] * tf.cast(img_h, tf.float32) * scale + tf.cast(pad_h_top, tf.float32)) / target_h
+    if training:
+        p1 = tf.random.uniform([], 0, 10)
+        p2 = tf.random.uniform([], 0, 10)
+        image = tf.image.random_brightness(image, 0.2)
+        image = tf.image.random_contrast(image, 0.1, 0.2)
+        image = tf.image.random_hue(image, 0.1)
+        image = tf.clip_by_value(image, 0, 255)
+        cond1 = tf.greater(p1, 5.0)
+        cond2 = tf.greater(p2, 5.0)
+
+        def flip_left_right(image, box_l, box_r, box_t, box_b):
+            image = tf.image.flip_left_right(image)
+            box_l = 1.0 - box_l
+            box_r = 1.0 - box_r
+            return image, box_r, box_l, box_t, box_b
+
+        def flip_top_down(image, box_l, box_r, box_t, box_b):
+            image = tf.image.flip_up_down(image)
+            box_t = 1.0 - box_t
+            box_b = 1.0 - box_b
+            return image, box_l, box_r, box_b, box_t
+
+        image, box_l, box_r, box_t, box_b = tf.cond(cond1, lambda: flip_left_right(image, box_l, box_r, box_t, box_b),
+                                                    lambda: (image, box_l, box_r, box_t, box_b))
+        image, box_l, box_r, box_t, box_b = tf.cond(cond2, lambda: flip_top_down(image, box_l, box_r, box_t, box_b),
+                                                    lambda: (image, box_l, box_r, box_t, box_b))
     boxes = tf.stack([box_l, box_t, box_r, box_b, boxes[:, 4]], axis=1)
     return image, boxes
 
@@ -92,10 +118,9 @@ def split_line(lines):
     return lines
 
 
-def parse_lines(lines, target_size):
-    images, bboxes = tf.map_fn(lambda x: transform_img_and_boxes(x, target_size), elems=lines,
+def parse_lines(lines, target_size, training=True):
+    images, bboxes = tf.map_fn(lambda x: transform_img_and_boxes(x, target_size, training), elems=lines,
                                dtype=(tf.float32, tf.float32), parallel_iterations=4, infer_shape=False)
-    # images.set_shape([None, target_size[0], target_size[1], 3])
     return images, bboxes
 
 
@@ -184,20 +209,25 @@ def wrap_dict(image, args):
         features["grids_{}".format(i)] = args[i]
     return features
 
+
 def scale(x):
     # x.set_shape([4, 416, 416, 3])
     return x / 255.0
 
-def input_fn(filenames, anchors, anchor_masks, classes, target_size=(416, 416), batch_size=4, pad_box_length=20):
+
+def input_fn(filenames, anchors, anchor_masks, classes, target_size=(416, 416), batch_size=4, training=True):
     dataset = tf.data.TextLineDataset(filenames)
-    dataset = dataset.shuffle(500)
+    if training:
+        dataset = dataset.apply(tf.data.experimental.shuffle_and_repeat(500, 100))
+    # dataset = dataset.shuffle(500)
     dataset = dataset.batch(batch_size)
     dataset = dataset.map(split_line, num_parallel_calls=4)
-    dataset = dataset.map(lambda x: parse_lines(x, target_size), 4)
+    dataset = dataset.map(lambda x: parse_lines(x, target_size, training), 4)
     dataset = dataset.map(lambda x, y: (scale(x), transform_targets(y, anchors, anchor_masks, classes)), 4)
     dataset = dataset.map(wrap_dict, 4)
     dataset = dataset.prefetch(-1)
     return dataset
+
 
 def input_fn_v2(infos, anchors, anchor_masks, classes, target_size=(416, 416), batch_size=4, pad_box_length=20):
     dataset = tf.data.Dataset.from_tensor_slices(infos)

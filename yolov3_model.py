@@ -2,6 +2,7 @@ import tensorflow as tf
 import yaml
 import numpy as np
 import re
+import cv2
 
 
 from tensorflow import keras
@@ -34,6 +35,7 @@ def yolov3_model(features, labels, mode, params):
         print("output_2 shape is xxxxx ", output_2.shape)
     else:
         outputs = model.YoloV3(image, anchors, masks, classes, is_train)
+        num_detections = outputs[3]
     if mode != tf.estimator.ModeKeys.PREDICT:
         labels = []
         pred_loss = []
@@ -62,7 +64,8 @@ def yolov3_model(features, labels, mode, params):
         else:
             return tf.estimator.EstimatorSpec(mode, loss=total_loss)
     else:
-        prediction = {"boxes": outputs[0],
+        prediction = {"image": image,
+                      "boxes": outputs[0],
                       "scores": outputs[1],
                       "classes": outputs[2],
                       "valid_detections": outputs[3]}
@@ -71,7 +74,6 @@ def yolov3_model(features, labels, mode, params):
 
 
 if __name__ == "__main__":
-    tf.log
     strategy = tf.distribute.MirroredStrategy()
     config_file = open("./config/yolov3.yaml")
     config = yaml.load(config_file)
@@ -81,7 +83,7 @@ if __name__ == "__main__":
     # session_configs = tf.ConfigProto(allow_soft_placement=True)
     # session_configs.gpu_options.allow_growth = True
     Config = tf.estimator.RunConfig(train_distribute=strategy,
-                                    log_step_count_steps=100, save_checkpoints_steps=500,
+                                    log_step_count_steps=100, save_checkpoints_steps=2000,
                                     eval_distribute=strategy, save_summary_steps=500)
     estimator = tf.estimator.Estimator(model_fn=yolov3_model, model_dir=config["model_dir"],
                                        config=Config, params=config)
@@ -94,6 +96,29 @@ if __name__ == "__main__":
                                                                  config["classes"], config["image_size"],
                                                                  config["batch_size"]), throttle_secs=100)
     tf.estimator.train_and_evaluate(estimator, train_spec=train_spec, eval_spec=eval_spec)
+    res = estimator.predict(input_fn=lambda :input_fn(config["test_files"],
+                                                                 config["anchors"], config["masks"],
+                                                                 config["classes"], config["image_size"],
+                                                                 config["batch_size"]))
+    index = 0
+    for ele in res:
+        num_detections = ele['valid_detections']
+        boxes = ele["boxes"][:num_detections]
+        scores = ele["scores"][:num_detections]
+        classes = ele["classes"][:num_detections]
+        image = ele["image"]
+        image = np.clip(image * 255, 0, 255).astype(np.uint8)
+        h, w = np.shape(image)[:2]
+        for i in range(num_detections):
+            x1 = int(boxes[i, 0] * w)
+            x2 = int(boxes[i, 2] * w)
+            y1 = int(boxes[i, 1] * h)
+            y2 = int(boxes[i, 3] * h)
+            image = cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+        cv2.imwrite("./result/{}.jpg".format(index), image)
+        index += 1
+        if index == 10:
+            break
 
     """
     is_train = True

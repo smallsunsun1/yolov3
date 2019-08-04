@@ -37,7 +37,7 @@ def DarknetConv(x, filters, size, strides=1, batch_norm=True):
                          strides, padding)(x)
     if batch_norm:
         x = group_norm(x, 32)
-        x = keras.layers.BatchNormalization()(x)
+        # x = keras.layers.BatchNormalization()(x)
         x = keras.layers.LeakyReLU(0.1)(x)
     return x
 
