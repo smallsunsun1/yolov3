@@ -6,7 +6,7 @@ import cv2
 
 
 from tensorflow import keras
-from data_loader import input_fn, input_fn_v2
+from data_loader import input_fn, input_fn_v2, test_input_fn
 
 
 from model import model
@@ -95,11 +95,13 @@ if __name__ == "__main__":
                                                                  config["anchors"], config["masks"],
                                                                  config["classes"], config["image_size"],
                                                                  config["batch_size"], False), steps=None, throttle_secs=100)
-    tf.estimator.train_and_evaluate(estimator, train_spec=train_spec, eval_spec=eval_spec)
-    res = estimator.predict(input_fn=lambda :input_fn(config["test_files"],
-                                                                 config["anchors"], config["masks"],
-                                                                 config["classes"], config["image_size"],
-                                                                 config["batch_size"], False))
+#    tf.estimator.train_and_evaluate(estimator, train_spec=train_spec, eval_spec=eval_spec)
+#     res = estimator.predict(input_fn=lambda :input_fn(config["test_files"],
+#                                                                  config["anchors"], config["masks"],
+#                                                                  config["classes"], config["image_size"],
+#                                                                  config["batch_size"], False))
+    res = estimator.predict(input_fn=lambda: test_input_fn(config["test_files"],
+                                                      config["batch_size"], config["image_size"]))
     index = 0
     for ele in res:
         num_detections = ele['valid_detections']
@@ -115,9 +117,10 @@ if __name__ == "__main__":
             y1 = int(boxes[i, 1] * h)
             y2 = int(boxes[i, 3] * h)
             image = cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+        image =  cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         cv2.imwrite("./result/{}.jpg".format(index), image)
         index += 1
-        if index == 10:
+        if index == 100:
             break
 
     """

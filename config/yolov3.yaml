@@ -5,10 +5,10 @@ classes: 2
 anchors: [[10, 13], [16, 30], [33, 23], [30, 61], [62, 45], [59, 119], [116, 90], [156, 198], [373, 326]]
 masks: [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
 learning_rate: 0.001
-model_dir: "./model_v1"
+model_dir: "./model_v2"
 train_files:
   - "/home/admin-seu/hugh/yolov3-tf2/data_native/train.txt"
 eval_files:
   - "/home/admin-seu/hugh/yolov3-tf2/data_native/eval.txt"
 test_files:
-  - "/home/admin-seu/hugh/yolov3-tf2/data_native/valid.txt"
+  - "/home/admin-seu/sss/yolo-V3/data/test.txt"
