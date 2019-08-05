@@ -25,6 +25,4 @@ yolov3_model.py 模型训练, 运行python yolov3_model.py进行训练和评估
 
 根据训练结果自己进行评估0.0
 
-## 靠
 
-1. 靠縄CCV2019 oral CARAFE靠靠靠靠靠靠靠縝ilinear靠靠靠
