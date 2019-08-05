@@ -48,7 +48,7 @@ def transform_img_and_boxes(lines, target_size=(416, 416), training=True):
     if training:
         p1 = tf.random.uniform([], 0, 10)
         p2 = tf.random.uniform([], 0, 10)
-        image = tf.image.random_brightness(image, 0.2)
+        image = tf.image.random_brightness(image, 0.1)
         image = tf.image.random_contrast(image, 0.1, 0.2)
         image = tf.image.random_hue(image, 0.1)
         image = tf.clip_by_value(image, 0, 255)
@@ -226,7 +226,7 @@ def scale(x):
 def input_fn(filenames, anchors, anchor_masks, classes, target_size=(416, 416), batch_size=4, training=True):
     dataset = tf.data.TextLineDataset(filenames)
     if training:
-        dataset = dataset.apply(tf.data.experimental.shuffle_and_repeat(500, 100))
+        dataset = dataset.apply(tf.data.experimental.shuffle_and_repeat(500, 200))
     # dataset = dataset.shuffle(500)
     dataset = dataset.batch(batch_size)
     dataset = dataset.map(split_line, num_parallel_calls=4)
