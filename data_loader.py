@@ -5,7 +5,7 @@ import os
 
 
 def read_and_scale_image(path, target_size):
-    content = tf.io.read_file(imagename)
+    content = tf.io.read_file(path)
     image = tf.image.decode_image(content, channels=3)
     image = tf.image.resize_with_pad(image, target_size[0], target_size[1])
     image = image / 255.0
