@@ -4,6 +4,14 @@ import cv2
 import os
 
 
+def read_and_scale_image(path, target_size):
+    content = tf.io.read_file(imagename)
+    image = tf.image.decode_image(content, channels=3)
+    image = tf.image.resize_with_pad(image, target_size[0], target_size[1])
+    image = image / 255.0
+    return image
+
+
 def transform_img_and_boxes(lines, target_size=(416, 416), training=True):
     """
     :param imagename:
@@ -225,6 +233,14 @@ def input_fn(filenames, anchors, anchor_masks, classes, target_size=(416, 416), 
     dataset = dataset.map(lambda x: parse_lines(x, target_size, training), 4)
     dataset = dataset.map(lambda x, y: (scale(x), transform_targets(y, anchors, anchor_masks, classes)), 4)
     dataset = dataset.map(wrap_dict, 4)
+    dataset = dataset.prefetch(-1)
+    return dataset
+
+def test_input_fn(filenames, batch_size = 4, target_size=(416, 416)):
+    dataset = tf.data.TextLineDataset(filenames)
+    dataset = dataset.map(lambda x:read_and_scale_image(x, target_size), 4)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.map(lambda x:{"image":x}, 4)
     dataset = dataset.prefetch(-1)
     return dataset
 
