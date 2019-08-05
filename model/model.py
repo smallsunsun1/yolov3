@@ -3,6 +3,32 @@ from tensorflow import keras
 from .util import broadcast_iou
 
 
+def carafe(feature_map, cm, upsample_scale, k_encoder, kernel_size):
+    """implementation os ICCV 2019 oral presentation CARAFE module"""
+    f1 = keras.layers.Conv2D(cm, (1, 1), padding="valid")(feature_map)
+    encode_feature = keras.layers.Conv2D(upsample_scale * upsample_scale * kernel_size * kernel_size,
+                                         (k_encoder, k_encoder), padding="same")(f1)
+    encode_feature = tf.nn.depth_to_space(encode_feature, upsample_scale)
+    encode_feature = tf.nn.softmax(encode_feature, axis=-1)
+    """encode_feature [B x (h x scale) x (w x scale) x (kernel_size * kernel_size)]"""
+    extract_feature = tf.image.extract_image_patches(feature_map, [1, kernel_size, kernel_size, 1],
+                                                     strides=[1, 1, 1, 1], rates=[1, 1, 1, 1], padding="SAME")
+    """extract feature [B x h x w x (channel x kernel_size x kernel_size)]"""
+    extract_feature = keras.layers.UpSampling2D((upsample_scale, upsample_scale))(extract_feature)
+    extract_feature_shape = tf.shape(extract_feature)
+    B = extract_feature_shape[0]
+    H = extract_feature_shape[1]
+    W = extract_feature_shape[2]
+    block_size = kernel_size * kernel_size
+    extract_feature = tf.reshape(extract_feature, [B, H, W, block_size, -1])
+    extract_feature = tf.transpose(extract_feature, [0, 1, 2, 4, 3])
+    """extract feature [B x (h x scale) x (w x scale) x channel x (kernel_size x kernel_size)]"""
+    encode_feature = tf.expand_dims(encode_feature, axis=-1)
+    upsample_feature = tf.matmul(extract_feature, encode_feature)
+    upsample_feature = tf.squeeze(upsample_feature, axis=-1)
+    return upsample_feature
+
+
 def group_norm(x, G=32, esp=1e-5):
     x = tf.transpose(x, [0, 3, 1, 2])
     x_shape = tf.shape(x)
@@ -76,7 +102,8 @@ def YoloConv(inputs, filters):
         x, x_skip = inputs
         x = DarknetConv(x, filters, 1)
         x_shape = tf.shape(x)
-        x = tf.image.resize(x, [x_shape[1] * 2, x_shape[2] * 2])
+#        x = tf.image.resize(x, [x_shape[1] * 2, x_shape[2] * 2])
+        x = carafe(x, 3, 2, 3, 3)
         x = tf.concat([x, x_skip], axis=-1)
     else:
         x = inputs
