@@ -5,6 +5,7 @@ from .util import broadcast_iou
 
 def carafe(feature_map, cm, upsample_scale, k_encoder, kernel_size):
     """implementation os ICCV 2019 oral presentation CARAFE module"""
+    static_shape = feature_map.get_shape().as_list()
     f1 = keras.layers.Conv2D(cm, (1, 1), padding="valid")(feature_map)
     encode_feature = keras.layers.Conv2D(upsample_scale * upsample_scale * kernel_size * kernel_size,
                                          (k_encoder, k_encoder), padding="same")(f1)
@@ -26,13 +27,14 @@ def carafe(feature_map, cm, upsample_scale, k_encoder, kernel_size):
     encode_feature = tf.expand_dims(encode_feature, axis=-1)
     upsample_feature = tf.matmul(extract_feature, encode_feature)
     upsample_feature = tf.squeeze(upsample_feature, axis=-1)
+    upsample_feature.set_shape([static_shape[0], static_shape[1] * upsample_scale, static_shape[2] * upsample_scale, static_shape[3]])
     return upsample_feature
 
 
 def group_norm(x, G=32, esp=1e-5):
+    shape_info = x.get_shape().as_list()
     x = tf.transpose(x, [0, 3, 1, 2])
     x_shape = tf.shape(x)
-    N = x_shape[0]
     C = x_shape[1]
     H = x_shape[2]
     W = x_shape[3]
@@ -41,14 +43,15 @@ def group_norm(x, G=32, esp=1e-5):
     mean, var = tf.nn.moments(x, [2, 3, 4], keepdims=True)
     x = (x - mean) / tf.sqrt(var + esp)
     # per channel gamma and beta
-    gamma = tf.Variable(tf.ones(shape=[C]), dtype=tf.float32, name='gamma')
-    beta = tf.Variable(tf.ones(shape=[C]), dtype=tf.float32, name='beta')
+    gamma = tf.Variable(tf.ones(shape=[shape_info[3]]), dtype=tf.float32, name='gamma')
+    beta = tf.Variable(tf.ones(shape=[shape_info[3]]), dtype=tf.float32, name='beta')
     gamma = tf.reshape(gamma, [1, C, 1, 1])
     beta = tf.reshape(beta, [1, C, 1, 1])
 
     output = tf.reshape(x, [-1, C, H, W]) * gamma + beta
     # tranpose: [bs, c, h, w, c] to [bs, h, w, c] following the paper
     output = tf.transpose(output, [0, 2, 3, 1])
+    output.set_shape(shape_info)
     return output
 
 
@@ -102,7 +105,7 @@ def YoloConv(inputs, filters):
         x, x_skip = inputs
         x = DarknetConv(x, filters, 1)
         x_shape = tf.shape(x)
-#        x = tf.image.resize(x, [x_shape[1] * 2, x_shape[2] * 2])
+        # x = tf.image.resize(x, [x_shape[1] * 2, x_shape[2] * 2])
         x = carafe(x, 3, 2, 3, 3)
         x = tf.concat([x, x_skip], axis=-1)
     else:
@@ -299,7 +302,7 @@ def YoloLoss(anchors, classes=80, ignore_thresh=0.5):
         obj_loss = tf.reduce_sum(obj_loss, axis=(1, 2, 3))
         class_loss = tf.reduce_sum(class_loss, axis=(1, 2, 3))
 
-        return (xy_loss + wh_loss + obj_loss + class_loss) 
+        return (xy_loss + wh_loss + obj_loss + class_loss)
     return yolo_loss
 
 # def yolo_boxes(pred, anchors, classes):

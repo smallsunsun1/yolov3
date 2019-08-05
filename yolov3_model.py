@@ -22,7 +22,8 @@ def yolov3_model(features, labels, mode, params):
     is_train = (mode != tf.estimator.ModeKeys.PREDICT)
     image = features["image"]
     image_size = params["image_size"]
-    image.set_shape([params["batch_size"], image_size[1], image_size[0], 3])
+    image.set_shape([None, None, None, 3])
+    # image.set_shape([params["batch_size"], image_size[1], image_size[0], 3])
     key_prefix = "grids_{}"
     if is_train:
         output_0, output_1, output_2 = model.YoloV3(image, anchors, masks, classes, is_train)
@@ -35,7 +36,6 @@ def yolov3_model(features, labels, mode, params):
         print("output_2 shape is xxxxx ", output_2.shape)
     else:
         outputs = model.YoloV3(image, anchors, masks, classes, is_train)
-        num_detections = outputs[3]
     if mode != tf.estimator.ModeKeys.PREDICT:
         labels = []
         pred_loss = []
