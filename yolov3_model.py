@@ -94,12 +94,12 @@ if __name__ == "__main__":
     eval_spec = tf.estimator.EvalSpec(input_fn=lambda :input_fn(config["eval_files"],
                                                                  config["anchors"], config["masks"],
                                                                  config["classes"], config["image_size"],
-                                                                 config["batch_size"]), throttle_secs=100)
+                                                                 config["batch_size"], False), steps=None, throttle_secs=100)
     tf.estimator.train_and_evaluate(estimator, train_spec=train_spec, eval_spec=eval_spec)
     res = estimator.predict(input_fn=lambda :input_fn(config["test_files"],
                                                                  config["anchors"], config["masks"],
                                                                  config["classes"], config["image_size"],
-                                                                 config["batch_size"]))
+                                                                 config["batch_size"], False))
     index = 0
     for ele in res:
         num_detections = ele['valid_detections']
