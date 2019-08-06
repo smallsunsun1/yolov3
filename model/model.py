@@ -12,7 +12,7 @@ def carafe(feature_map, cm, upsample_scale, k_encoder, kernel_size):
     encode_feature = tf.nn.depth_to_space(encode_feature, upsample_scale)
     encode_feature = tf.nn.softmax(encode_feature, axis=-1)
     """encode_feature [B x (h x scale) x (w x scale) x (kernel_size * kernel_size)]"""
-    extract_feature = tf.image.extract_image_patches(feature_map, [1, kernel_size, kernel_size, 1],
+    extract_feature = tf.image.extract_patches(feature_map, [1, kernel_size, kernel_size, 1],
                                                      strides=[1, 1, 1, 1], rates=[1, 1, 1, 1], padding="SAME")
     """extract feature [B x h x w x (channel x kernel_size x kernel_size)]"""
     extract_feature = keras.layers.UpSampling2D((upsample_scale, upsample_scale))(extract_feature)
@@ -27,7 +27,11 @@ def carafe(feature_map, cm, upsample_scale, k_encoder, kernel_size):
     encode_feature = tf.expand_dims(encode_feature, axis=-1)
     upsample_feature = tf.matmul(extract_feature, encode_feature)
     upsample_feature = tf.squeeze(upsample_feature, axis=-1)
-    upsample_feature.set_shape([static_shape[0], static_shape[1] * upsample_scale, static_shape[2] * upsample_scale, static_shape[3]])
+    if static_shape[1] is not None:
+        static_shape[1] = static_shape[1] * 2
+    if static_shape[2] is not None:
+        static_shape[2] = static_shape[2] * 2
+    upsample_feature.set_shape([static_shape[0], static_shape[1], static_shape[2], static_shape[3]])
     return upsample_feature
 
 

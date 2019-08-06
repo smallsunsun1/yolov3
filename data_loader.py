@@ -7,7 +7,8 @@ import os
 def read_and_scale_image(path, target_size):
     content = tf.io.read_file(path)
     image = tf.image.decode_image(content, channels=3)
-    image = tf.image.resize_image_with_pad(image, target_size[0], target_size[1])
+    image = tf.image.resize_with_pad(image, target_size[0], target_size[1])
+    # image = tf.image.resize_image_with_pad(image, target_size[0], target_size[1])
     image = image / 255.0
     return image
 
@@ -120,9 +121,9 @@ def transform_targets_for_output(y_true, grid_size, anchor_idxs, classes):
 def split_line(lines):
     lines = tf.strings.regex_replace(lines, ",", " ")
     lines = tf.strings.split(lines, " ")
-    # lines = lines.to_tensor("0")
+    lines = lines.to_tensor("0")
     # lines = tf.sparse.to_dense(lines.indices, lines.dense_shape, lines.values, default_value="0")
-    lines = tf.sparse.to_dense(lines, default_value="0")
+    # lines = tf.sparse.to_dense(lines, default_value="0")
     return lines
 
 
@@ -222,7 +223,7 @@ def scale(x):
     # x.set_shape([4, 416, 416, 3])
     return x / 255.0
 
-
+# @tf.function
 def input_fn(filenames, anchors, anchor_masks, classes, target_size=(416, 416), batch_size=4, training=True):
     dataset = tf.data.TextLineDataset(filenames)
     if training:
