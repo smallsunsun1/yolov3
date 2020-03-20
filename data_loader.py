@@ -3,11 +3,13 @@ import numpy as np
 import cv2
 import os
 
+import augment
+
 
 def read_and_scale_image(path, target_size):
     content = tf.io.read_file(path)
     image = tf.image.decode_image(content, channels=3)
-    image = tf.image.resize_image_with_pad(image, target_size[0], target_size[1])
+    image = tf.image.resize_with_pad(image, target_size[0], target_size[1])
     image = image / 255.0
     return image
 
@@ -39,40 +41,44 @@ def transform_img_and_boxes(lines, target_size=(416, 416), training=True):
     pad_h_bottom = target_h - new_h - pad_h_top
     pad_w_left = (target_w - new_w) // 2
     pad_w_right = target_w - new_w - pad_w_left
-    image = tf.squeeze(tf.image.resize(tf.expand_dims(image, axis=0), [new_h, new_w]), axis=0)
+    image = tf.cast(tf.image.resize(image, [new_h, new_w]), tf.uint8)
     image = tf.pad(image, [[pad_h_top, pad_h_bottom], [pad_w_left, pad_w_right], [0, 0]])
     box_l = (boxes[:, 0] * tf.cast(img_w, tf.float32) * scale + tf.cast(pad_w_left, tf.float32)) / target_w
     box_r = (boxes[:, 2] * tf.cast(img_w, tf.float32) * scale + tf.cast(pad_w_left, tf.float32)) / target_w
     box_t = (boxes[:, 1] * tf.cast(img_h, tf.float32) * scale + tf.cast(pad_h_top, tf.float32)) / target_h
     box_b = (boxes[:, 3] * tf.cast(img_h, tf.float32) * scale + tf.cast(pad_h_top, tf.float32)) / target_h
+    coordinate = tf.stack([box_t, box_l, box_b, box_r], axis=-1)
     if training:
-        p1 = tf.random.uniform([], 0, 10)
-        p2 = tf.random.uniform([], 0, 10)
-        image = tf.image.random_brightness(image, 0.1)
-        image = tf.image.random_contrast(image, 0.1, 0.2)
-        image = tf.image.random_hue(image, 0.1)
-        image = tf.clip_by_value(image, 0, 255)
-        cond1 = tf.greater(p1, 5.0)
-        cond2 = tf.greater(p2, 5.0)
-
-        def flip_left_right(image, box_l, box_r, box_t, box_b):
-            image = tf.image.flip_left_right(image)
-            box_l = 1.0 - box_l
-            box_r = 1.0 - box_r
-            return image, box_r, box_l, box_t, box_b
-
-        def flip_top_down(image, box_l, box_r, box_t, box_b):
-            image = tf.image.flip_up_down(image)
-            box_t = 1.0 - box_t
-            box_b = 1.0 - box_b
-            return image, box_l, box_r, box_b, box_t
-
-        image, box_l, box_r, box_t, box_b = tf.cond(cond1, lambda: flip_left_right(image, box_l, box_r, box_t, box_b),
-                                                    lambda: (image, box_l, box_r, box_t, box_b))
-        image, box_l, box_r, box_t, box_b = tf.cond(cond2, lambda: flip_top_down(image, box_l, box_r, box_t, box_b),
-                                                    lambda: (image, box_l, box_r, box_t, box_b))
-    boxes = tf.stack([box_l, box_t, box_r, box_b, boxes[:, 4]], axis=1)
-    return image, boxes
+        image, coordinate = augment.distort_image_with_autoaugment(image, coordinate, 'v0')
+        # p1 = tf.random.uniform([], 0, 10)
+        # p2 = tf.random.uniform([], 0, 10)
+        # image = tf.image.random_brightness(image, 0.1)
+        # image = tf.image.random_contrast(image, 0.1, 0.2)
+        # image = tf.image.random_hue(image, 0.1)
+        # image = tf.clip_by_value(image, 0, 255)
+        # cond1 = tf.greater(p1, 5.0)
+        # cond2 = tf.greater(p2, 5.0)
+        #
+        # def flip_left_right(image, box_l, box_r, box_t, box_b):
+        #     image = tf.image.flip_left_right(image)
+        #     box_l = 1.0 - box_l
+        #     box_r = 1.0 - box_r
+        #     return image, box_r, box_l, box_t, box_b
+        #
+        # def flip_top_down(image, box_l, box_r, box_t, box_b):
+        #     image = tf.image.flip_up_down(image)
+        #     box_t = 1.0 - box_t
+        #     box_b = 1.0 - box_b
+        #     return image, box_l, box_r, box_b, box_t
+        #
+        # image, box_l, box_r, box_t, box_b = tf.cond(cond1, lambda: flip_left_right(image, box_l, box_r, box_t, box_b),
+        #                                             lambda: (image, box_l, box_r, box_t, box_b))
+        # image, box_l, box_r, box_t, box_b = tf.cond(cond2, lambda: flip_top_down(image, box_l, box_r, box_t, box_b),
+        #                                             lambda: (image, box_l, box_r, box_t, box_b))
+    boxes = tf.stack([coordinate[:, 1], coordinate[:, 0], coordinate[:, 3], coordinate[:, 2], boxes[:, 4]], axis=-1)
+    image.set_shape([target_size[0], target_size[1], 3])
+    # boxes = tf.stack([box_l, box_t, box_r, box_b, boxes[:, 4]], axis=1)
+    return tf.cast(image, tf.float32), boxes
 
 
 @tf.function
@@ -110,9 +116,6 @@ def transform_targets_for_output(y_true, grid_size, anchor_idxs, classes):
                     idx, [box[0], box[1], box[2], box[3], 1, y_true[i][j][4]])
                 idx += 1
 
-    # tf.print(indexes.stack())
-    # tf.print(updates.stack())
-
     return tf.tensor_scatter_nd_update(
         y_true_out, indexes.stack(), updates.stack())
 
@@ -120,13 +123,14 @@ def transform_targets_for_output(y_true, grid_size, anchor_idxs, classes):
 def split_line(lines):
     lines = tf.strings.regex_replace(lines, ",", " ")
     lines = tf.strings.split(lines, " ")
-    # lines = lines.to_tensor("0")
+    lines = lines.to_tensor("0")
     # lines = tf.sparse.to_dense(lines.indices, lines.dense_shape, lines.values, default_value="0")
-    lines = tf.sparse.to_dense(lines, default_value="0")
+    # lines = tf.sparse.to_dense(lines, default_value="0")
     return lines
 
 
 def parse_lines(lines, target_size, training=True):
+    # images, bboxes = tf.vectorized_map(lambda x: transform_img_and_boxes(x, target_size, training), lines)
     images, bboxes = tf.map_fn(lambda x: transform_img_and_boxes(x, target_size, training), elems=lines,
                                dtype=(tf.float32, tf.float32), parallel_iterations=4, infer_shape=False)
     return images, bboxes
@@ -135,53 +139,6 @@ def parse_lines(lines, target_size, training=True):
 def area(boxes):
     return (boxes[3] - boxes[1]) * (boxes[2] - boxes[0])
 
-
-# def transform_targets_for_output(y_true, grid_size, anchor_idxs, classes):
-#     # y_true: (N, boxes, (x1, y1, x2, y2, class, best_anchor))
-#     N = tf.shape(y_true)[0]
-#     M = tf.shape(y_true)[1]
-#     if not isinstance(grid_size, list) and not isinstance(grid_size, tuple):
-#         grid_size = [grid_size, grid_size]
-#     # y_true_out: (N, grid, grid, anchors, [x, y, w, h, obj, class])
-#     y_true_out = tf.zeros((N, grid_size[1], grid_size[0], tf.shape(anchor_idxs)[0], 6), dtype=tf.float32)
-#
-#     anchor_idxs = tf.cast(anchor_idxs, tf.int32)
-#
-#     indexes = tf.TensorArray(tf.int32, 0, dynamic_size=True, infer_shape=True)
-#     updates = tf.TensorArray(tf.float32, 0, dynamic_size=True, infer_shape=True)
-#     idx = 0
-#
-#     def cond(i, j, n, m, idx, indexes, updates):
-#         return i < n
-#
-#     def body(i, j, n, m, idx, indexes, updates):
-#         anchor_eq = tf.equal(anchor_idxs, tf.cast(y_true[i][j][5], tf.int32))
-#         box = y_true[i][j][0:4]
-#         box_area = area(box)
-#         condition = tf.logical_and(tf.not_equal(box_area, 0), tf.reduce_any(anchor_eq))
-#         def true_fn(indexes, updates, idx):
-#             box_xy = (y_true[i][j][0:2] + y_true[i][j][2:4]) / 2.0
-#             anchor_idx = tf.cast(tf.where(anchor_eq), tf.int32)
-#             grid_xy = tf.cast(box_xy * grid_size, tf.int32)
-#             indexes = indexes.write(idx, [i, grid_xy[1], grid_xy[0], anchor_idx[0][0]])
-#             updates = updates.write(idx, [box[0], box[1], box[2], box[3], 1, y_true[i][j][4]])
-#             idx += 1
-#             return idx, indexes, updates
-#
-#         def false_fn(indexes, updates, idx):
-#             return idx, indexes, updates
-#
-#         idx, indexes, updates = tf.cond(condition, lambda: true_fn(indexes, updates, idx),
-#                                         lambda: false_fn(indexes, updates, idx))
-#         j += 1
-#         j = tf.mod(j, m)
-#         i = tf.cond(tf.equal(j, 0), lambda: i + 1, lambda: i)
-#         return i, j, n, m, idx, indexes, updates
-#
-#     *_, idx, indexes, updates = tf.while_loop(cond, body, loop_vars=[0, 0, N, M, idx, indexes, updates])
-#
-#     y_true_out = y_true_out + tf.scatter_nd(indexes.stack(), updates.stack(), tf.shape(y_true_out))
-#     return y_true_out
 
 def transform_targets(y_train, anchors, anchor_masks, classes):
     y_outs = []
@@ -210,37 +167,42 @@ def transform_targets(y_train, anchors, anchor_masks, classes):
     return tuple(y_outs)
 
 
-def wrap_dict(image, args):
+def wrap_dict(image, args, batch_size, target_size):
+    dict1 = {}
+    image.set_shape([batch_size, target_size[0], target_size[1], 3])
+    dict1['image'] = image
     features = {}
-    features['image'] = image
     for i in range(len(args)):
-        features["grids_{}".format(i)] = args[i]
-    return features
+        if i == 0:
+            features['yolov3'] = args[i]
+        else:
+            features["yolov3_{}".format(i)] = args[i]
+    return (dict1, features)
 
 
 def scale(x):
-    # x.set_shape([4, 416, 416, 3])
-    return x / 255.0
+    return (x - 127.5) / 255.0
 
 
 def input_fn(filenames, anchors, anchor_masks, classes, target_size=(416, 416), batch_size=4, training=True):
     dataset = tf.data.TextLineDataset(filenames)
     if training:
-        dataset = dataset.apply(tf.data.experimental.shuffle_and_repeat(500, 200))
-    # dataset = dataset.shuffle(500)
+        dataset = dataset.shuffle(1000)
+        dataset = dataset.repeat()
     dataset = dataset.batch(batch_size)
-    dataset = dataset.map(split_line, num_parallel_calls=4)
-    dataset = dataset.map(lambda x: parse_lines(x, target_size, training), 4)
-    dataset = dataset.map(lambda x, y: (scale(x), transform_targets(y, anchors, anchor_masks, classes)), 4)
-    dataset = dataset.map(wrap_dict, 4)
+    dataset = dataset.map(split_line, num_parallel_calls=8)
+    dataset = dataset.map(lambda x: parse_lines(x, target_size, training), 8)
+    dataset = dataset.map(lambda x, y: (scale(x), transform_targets(y, anchors, anchor_masks, classes)), 8)
+    dataset = dataset.map(lambda x, y: wrap_dict(x, y, batch_size, target_size), 8)
     dataset = dataset.prefetch(-1)
     return dataset
 
-def test_input_fn(filenames, batch_size = 4, target_size=(416, 416)):
+
+def test_input_fn(filenames, batch_size=4, target_size=(416, 416)):
     dataset = tf.data.TextLineDataset(filenames)
-    dataset = dataset.map(lambda x:read_and_scale_image(x, target_size), 4)
+    dataset = dataset.map(lambda x: read_and_scale_image(x, target_size), 4)
     dataset = dataset.batch(batch_size)
-    dataset = dataset.map(lambda x:{"image":x}, 4)
+    dataset = dataset.map(lambda x: {"image": x}, 4)
     dataset = dataset.prefetch(-1)
     return dataset
 
@@ -262,17 +224,18 @@ if __name__ == "__main__":
                              (59, 119), (116, 90), (156, 198), (373, 326)],
                             np.float32) / 416
     yolo_anchor_masks = np.array([[6, 7, 8], [3, 4, 5], [0, 1, 2]])
-    filename = "/home/admin-seu/hugh/yolov3-tf2/data_native/train.txt"
-    output_dir = "/home/admin-seu/hugh/yolov3-tf2/temp_file"
-    dataset = input_fn(filename, yolo_anchors, yolo_anchor_masks, 2, batch_size=4)
+    filename = "/home/sunjiahe/Datasets/VOCDataset/yolo_train.txt"
+    # output_dir = "/home/admin-seu/hugh/yolov3-tf2/temp_file"
+    dataset = input_fn(filename, yolo_anchors, yolo_anchor_masks, 21, batch_size=4)
     for idx, ele in enumerate(dataset):
-        print(dataset.output_shapes)
+        print(ele[0]['image'].shape)
+        # print(ele[1])
         # print(tf.where(tf.equal(ele["grids_0"][:, :, :, :, 4], 1)))
         # print(tf.where(tf.equal(ele["grids_1"][:, :, :, :, 4], 1)))
         # print(tf.where(tf.equal(ele["grids_2"][:, :, :, :, 4], 1)))
         # print("stop")
         # image = tf.cast(ele[0], tf.uint8).numpy()[0]
-        # boxes = ele[1]
+        # boxes = ele[1]e
         # print(ele)
 
         # print(boxes)
