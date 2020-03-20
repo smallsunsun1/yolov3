@@ -14,10 +14,8 @@ physical_devices = tf.config.experimental.list_physical_devices('GPU')
 assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
-
 policy = mixed_precision.Policy("mixed_float16")
 mixed_precision.set_policy(policy)
-
 
 config_file = open("./config/yolov3.yaml")
 params = yaml.load(config_file)
@@ -25,6 +23,15 @@ params["anchors"] = np.asarray(params["anchors"]) / np.asarray(params["image_siz
 params["masks"] = np.asarray(params["masks"])
 anchors = params["anchors"]
 masks = params["masks"]
+
+
+def schedule(epoch):
+    if epoch < 20:
+        return 0.001
+    elif epoch < 25:
+        return 0.0001
+    else:
+        return 0.00001
 
 
 image = keras.Input(shape=[None, None, 3], dtype=tf.float32, name='image')
@@ -42,10 +49,11 @@ yolo_model.compile(optimizer=keras.optimizers.Adam(),
                    loss={'yolov3': model.YoloLoss(anchors[masks[0]], params["classes"]),
                          'yolov3_1': model.YoloLoss(anchors[masks[1]], params["classes"]),
                          'yolov3_2': model.YoloLoss(anchors[masks[2]], params["classes"])})
-yolo_model.fit(dataset, steps_per_epoch=4000, epochs=10,
-    callbacks=[keras.callbacks.EarlyStopping(patience=3, verbose=1),
-    keras.callbacks.ModelCheckpoint('checkpoints/yolov3_train_{epoch}.tf',
-                                    verbose=1, save_weights_only=True),
-    keras.callbacks.TensorBoard(log_dir='logs', update_freq=1000,
-                                profile_batch=2)]
-)
+yolo_model.fit(dataset, steps_per_epoch=3000, epochs=30,
+               callbacks=[
+                   keras.callbacks.LearningRateScheduler(schedule, 1),
+                   keras.callbacks.ModelCheckpoint('checkpoints/yolov3_train_{epoch}.tf',
+                                                   verbose=1, save_weights_only=True),
+                   keras.callbacks.TensorBoard(log_dir='logs', update_freq=1000,
+                                               profile_batch=2)]
+               )

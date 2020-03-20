@@ -292,9 +292,15 @@ class YoloLoss(keras.losses.Loss):
             true_class_idx, pred_class)
 
         # 6. sum over (batch, gridx, gridy, anchors) => (batch, 1)
-        xy_loss = tf.reduce_mean(xy_loss, axis=(1, 2, 3))
-        wh_loss = tf.reduce_mean(wh_loss, axis=(1, 2, 3))
-        obj_loss = tf.reduce_mean(obj_loss, axis=(1, 2, 3))
-        class_loss = tf.reduce_mean(class_loss, axis=(1, 2, 3))
+        # xy_loss = tf.reduce_mean(xy_loss, axis=(1, 2, 3))
+        # wh_loss = tf.reduce_mean(wh_loss, axis=(1, 2, 3))
+        # obj_loss = tf.reduce_mean(obj_loss, axis=(1, 2, 3))
+        # class_loss = tf.reduce_mean(class_loss, axis=(1, 2, 3))
+        # return tf.reduce_mean(xy_loss + wh_loss + obj_loss + class_loss)
+        xy_loss = tf.reduce_mean(xy_loss)
+        wh_loss = tf.reduce_mean(wh_loss)
+        obj_loss = tf.reduce_mean(obj_loss)
+        class_loss = tf.reduce_mean((obj_loss))
+        return xy_loss + wh_loss + obj_loss + class_loss
 
-        return tf.reduce_mean(xy_loss + wh_loss + obj_loss + class_loss)
+
