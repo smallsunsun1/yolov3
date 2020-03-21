@@ -214,7 +214,7 @@ class YoloV3(keras.layers.Layer):
         self.anchors = anchors
         self.masks = masks
         self.classes = classes
-        self.darknet = Darknet()
+        self.darknet = Darknet(kernel_regularizer=kernel_regularizer)
         self.yolo_conv1 = YoloConv(512, kernel_regularizer=kernel_regularizer)
         self.yolo_conv2 = YoloConv(256, kernel_regularizer=kernel_regularizer)
         self.yolo_conv3 = YoloConv(128, kernel_regularizer=kernel_regularizer)
@@ -288,19 +288,25 @@ class YoloLoss(keras.losses.Loss):
         obj_loss = obj_mask * obj_loss + \
                    (1 - obj_mask) * ignore_mask * obj_loss
         # TODO: use binary_crossentropy instead
-        class_loss = obj_mask * keras.losses.sparse_categorical_crossentropy(
-            true_class_idx, pred_class)
-
+        class_loss = obj_mask * keras.losses.binary_crossentropy(
+            tf.one_hot(tf.cast(tf.squeeze(true_class_idx, axis=-1), tf.int32),
+                       depth=self.classes), pred_class, from_logits=False)
         # 6. sum over (batch, gridx, gridy, anchors) => (batch, 1)
-        # xy_loss = tf.reduce_mean(xy_loss, axis=(1, 2, 3))
-        # wh_loss = tf.reduce_mean(wh_loss, axis=(1, 2, 3))
-        # obj_loss = tf.reduce_mean(obj_loss, axis=(1, 2, 3))
-        # class_loss = tf.reduce_mean(class_loss, axis=(1, 2, 3))
-        # return tf.reduce_mean(xy_loss + wh_loss + obj_loss + class_loss)
-        xy_loss = tf.reduce_mean(xy_loss)
-        wh_loss = tf.reduce_mean(wh_loss)
-        obj_loss = tf.reduce_mean(obj_loss)
-        class_loss = tf.reduce_mean((obj_loss))
-        return xy_loss + wh_loss + obj_loss + class_loss
-
-
+        # true_x1y1 = true_xy - true_wh / 2
+        # true_x2y2 = true_xy + true_wh / 2
+        # pred_x1y1 = pred_xy - pred_wh / 2
+        # pred_x2y2 = pred_xy + pred_wh / 2
+        # true_y1x1y2x2 = tf.concat([true_x1y1[..., ::-1], true_x2y2[..., ::-1]], axis=-1)
+        # pred_y1x1y2x2 = tf.concat([pred_x1y1[..., ::-1], pred_x2y2[..., ::-1]], axis=-1)
+        # boxes_loss = obj_mask * tfa.losses.giou_loss(true_y1x1y2x2, pred_y1x1y2x2) * box_loss_scale
+        # boxes_loss = tf.reduce_sum(boxes_loss, axis=(1, 2, 3))
+        xy_loss = tf.reduce_mean(xy_loss, axis=(1, 2, 3))
+        wh_loss = tf.reduce_mean(wh_loss, axis=(1, 2, 3))
+        obj_loss = tf.reduce_sum(obj_loss, axis=(1, 2, 3))
+        class_loss = tf.reduce_sum(class_loss, axis=(1, 2, 3))
+        return tf.reduce_mean(xy_loss + wh_loss + obj_loss + class_loss)
+        # xy_loss = tf.reduce_mean(xy_loss)
+        # wh_loss = tf.reduce_mean(wh_loss)
+        # obj_loss = tf.reduce_mean(obj_loss)
+        # class_loss = tf.reduce_mean(class_loss)
+        # return xy_loss + wh_loss + obj_loss + class_loss
