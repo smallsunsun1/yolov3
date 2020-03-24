@@ -48,6 +48,7 @@ def transform_img_and_boxes(lines, target_size=(416, 416), training=True):
     box_t = (boxes[:, 1] * tf.cast(img_h, tf.float32) * scale + tf.cast(pad_h_top, tf.float32)) / target_h
     box_b = (boxes[:, 3] * tf.cast(img_h, tf.float32) * scale + tf.cast(pad_h_top, tf.float32)) / target_h
     coordinate = tf.stack([box_t, box_l, box_b, box_r], axis=-1)
+    coordinate = tf.clip_by_value(coordinate, 0, 1)
     if training:
         image, coordinate = augment.distort_image_with_autoaugment(image, coordinate, 'v0')
         # p1 = tf.random.uniform([], 0, 10)
@@ -55,7 +56,7 @@ def transform_img_and_boxes(lines, target_size=(416, 416), training=True):
         # image = tf.image.random_brightness(image, 0.1)
         # image = tf.image.random_contrast(image, 0.1, 0.2)
         # image = tf.image.random_hue(image, 0.1)
-        # image = tf.clip_by_value(image, 0, 255)
+        # image = tf.clip_by_value(tf.cast(image, tf.float32), 0, 255)
         # cond1 = tf.greater(p1, 5.0)
         # cond2 = tf.greater(p2, 5.0)
         #
@@ -228,7 +229,9 @@ if __name__ == "__main__":
     # output_dir = "/home/admin-seu/hugh/yolov3-tf2/temp_file"
     dataset = input_fn(filename, yolo_anchors, yolo_anchor_masks, 21, batch_size=4)
     for idx, ele in enumerate(dataset):
-        print(ele[0]['image'].shape)
+        data = tf.reduce_max(ele[1]['yolov3'], axis=-1)
+        indices = tf.where(tf.not_equal(data, 0))
+        print(tf.gather_nd(data, indices))
         # print(ele[1])
         # print(tf.where(tf.equal(ele["grids_0"][:, :, :, :, 4], 1)))
         # print(tf.where(tf.equal(ele["grids_1"][:, :, :, :, 4], 1)))
@@ -250,7 +253,7 @@ if __name__ == "__main__":
         #     print((l, t), (r, b))
         #     image = cv2.rectangle(image, (l, t), (r, b), (255, 0, 0), 2)
         # cv2.imwrite(os.path.join(output_dir, "{}.jpg".format(idx)), image)
-        if idx == 0:
+        if idx == 10:
             break
 
         # print(ele[1])

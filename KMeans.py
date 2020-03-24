@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import tensorflow_addons as tfa
 
 num_points = 100
 dimensions = 2

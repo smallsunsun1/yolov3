@@ -171,7 +171,8 @@ def yolo_boxes(pred, anchors, classes):
     box_xy, box_wh, objectness, class_probs = tf.split(pred, (2, 2, 1, classes), axis=-1)
     box_xy = tf.sigmoid(box_xy)  # [batch_size, grid, grid, anchors, 2]
     objectness = tf.sigmoid(objectness)
-    class_probs = tf.sigmoid(class_probs)
+    # class_probs = tf.sigmoid(class_probs)
+    # class_probs = tf.nn.softmax(class_probs, axis=-1)
     pred_box = tf.concat([box_xy, box_wh], axis=-1)  # original xywh for loss
     grid = tf.meshgrid(tf.range(grid_size_w), tf.range(grid_size_h))
     grid = tf.expand_dims(tf.stack(grid, axis=-1), axis=2)  # [gx, gy, 1, 2]
@@ -192,8 +193,9 @@ def yolo_nms(outputs):
         c.append(tf.reshape(o[1], (tf.shape(o[1])[0], -1, tf.shape(o[1])[-1])))
         t.append(tf.reshape(o[2], (tf.shape(o[2])[0], -1, tf.shape(o[2])[-1])))
     bbox = tf.concat(b, axis=1)
+    bbox = bbox * 416
     confidence = tf.concat(c, axis=1)
-    class_probs = tf.concat(t, axis=1)
+    class_probs = tf.nn.softmax(tf.concat(t, axis=1), axis=-1)
     scores = confidence * class_probs
     boxes, scores, classes, valid_detections = tf.image.combined_non_max_suppression(
         boxes=tf.cast(tf.reshape(bbox, (tf.shape(bbox)[0], -1, 1, 4)), tf.float32),
@@ -202,7 +204,8 @@ def yolo_nms(outputs):
         max_output_size_per_class=100,
         max_total_size=100,
         iou_threshold=0.5,
-        score_threshold=0.5
+        score_threshold=0.3,
+        clip_boxes=False
     )
 
     return boxes, scores, classes, valid_detections
@@ -264,19 +267,20 @@ class YoloLoss(keras.losses.Loss):
         grid_size = tf.shape(y_true)[1]
         grid = tf.meshgrid(tf.range(grid_size), tf.range(grid_size))
         grid = tf.expand_dims(tf.stack(grid, axis=-1), axis=2)
-        true_wh_raw = true_wh
         true_xy = true_xy * tf.cast(grid_size, true_xy.dtype) - \
                   tf.cast(grid, true_xy.dtype)
 
         true_wh = tf.math.log(true_wh / self.anchors)
-        true_wh = tf.where(tf.equal(true_wh_raw, 0),
+        true_wh = tf.where(tf.math.is_inf(true_wh),
                            tf.zeros_like(true_wh), true_wh)
         # 4. calculate all masks
         obj_mask = tf.squeeze(true_obj, -1)
         # ignore false positive when iou is over threshold
-        true_box_flat = tf.boolean_mask(true_box, tf.cast(obj_mask, tf.bool))
-        best_iou = tf.reduce_max(broadcast_iou(
-            pred_box, true_box_flat), axis=-1)
+        best_iou = tf.map_fn(
+            lambda x: tf.reduce_max(broadcast_iou(x[0], tf.boolean_mask(
+                x[1], tf.cast(x[2], tf.bool))), axis=-1),
+            (pred_box, true_box, obj_mask),
+            pred_box.dtype)
         ignore_mask = tf.cast(best_iou < self.ignore_thresh, obj_mask.dtype)
 
         # 5. calculate all losses
@@ -288,9 +292,11 @@ class YoloLoss(keras.losses.Loss):
         obj_loss = obj_mask * obj_loss + \
                    (1 - obj_mask) * ignore_mask * obj_loss
         # TODO: use binary_crossentropy instead
-        class_loss = obj_mask * keras.losses.binary_crossentropy(
-            tf.one_hot(tf.cast(tf.squeeze(true_class_idx, axis=-1), tf.int32),
-                       depth=self.classes), pred_class, from_logits=False)
+        # class_loss = obj_mask * keras.losses.binary_crossentropy(
+        #     tf.one_hot(tf.cast(tf.squeeze(true_class_idx, axis=-1), tf.int32),
+        #                depth=self.classes), pred_class, from_logits=False)
+        class_loss = obj_mask * keras.losses.sparse_categorical_crossentropy(true_class_idx, pred_class,
+                                                                             from_logits=True)
         # 6. sum over (batch, gridx, gridy, anchors) => (batch, 1)
         # true_x1y1 = true_xy - true_wh / 2
         # true_x2y2 = true_xy + true_wh / 2
