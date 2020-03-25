@@ -192,7 +192,7 @@ def yolo_nms(outputs, h, w):
         c.append(tf.reshape(o[1], (tf.shape(o[1])[0], -1, tf.shape(o[1])[-1])))
         t.append(tf.reshape(o[2], (tf.shape(o[2])[0], -1, tf.shape(o[2])[-1])))
     bbox = tf.concat(b, axis=1)
-    bbox = bbox * tf.cast(tf.concat([w, h], axis=-1), bbox.dtype)
+    bbox = bbox * tf.cast(tf.concat([w, h, w, h], axis=-1), bbox.dtype)
     confidence = tf.concat(c, axis=1)
     class_probs = tf.nn.softmax(tf.concat(t, axis=1), axis=-1)
     scores = confidence * class_probs

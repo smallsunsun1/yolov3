@@ -12,4 +12,4 @@ train_files:
 eval_files:
   - "/home/sunjiahe/Datasets/VOCDataset/yolo_test.txt"
 test_files:
-  - "/home/sunjiahe/Datasets/VOCDataset/2007_test.txt":
+  - "/home/sunjiahe/Datasets/VOCDataset/2007_test.txt"
