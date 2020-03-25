@@ -176,16 +176,15 @@ def yolo_boxes(pred, anchors, classes):
     pred_box = tf.concat([box_xy, box_wh], axis=-1)  # original xywh for loss
     grid = tf.meshgrid(tf.range(grid_size_w), tf.range(grid_size_h))
     grid = tf.expand_dims(tf.stack(grid, axis=-1), axis=2)  # [gx, gy, 1, 2]
-    box_xy = (box_xy + tf.cast(grid, box_xy.dtype)) / tf.cast(tf.stack([grid_size_w, grid_size_h], axis=-1),
-                                                              box_xy.dtype)
-    box_wh = tf.exp(box_wh) * anchors
+    box_xy = (box_xy + tf.cast(grid, box_xy.dtype))
+    box_wh = tf.exp(box_wh) * tf.cast(anchors, box_wh.dtype)
     box_x1y1 = box_xy - box_wh / 2
     box_x2y2 = box_xy + box_wh / 2
     bbox = tf.concat([box_x1y1, box_x2y2], axis=-1)
     return bbox, objectness, class_probs, pred_box
 
 
-def yolo_nms(outputs):
+def yolo_nms(outputs, h, w):
     # boxes, conf, type
     b, c, t = [], [], []
     for o in outputs:
@@ -193,7 +192,7 @@ def yolo_nms(outputs):
         c.append(tf.reshape(o[1], (tf.shape(o[1])[0], -1, tf.shape(o[1])[-1])))
         t.append(tf.reshape(o[2], (tf.shape(o[2])[0], -1, tf.shape(o[2])[-1])))
     bbox = tf.concat(b, axis=1)
-    bbox = bbox * 416
+    bbox = bbox * tf.cast(tf.concat([w, h], axis=-1), bbox.dtype)
     confidence = tf.concat(c, axis=1)
     class_probs = tf.nn.softmax(tf.concat(t, axis=1), axis=-1)
     scores = confidence * class_probs
@@ -204,7 +203,7 @@ def yolo_nms(outputs):
         max_output_size_per_class=100,
         max_total_size=100,
         iou_threshold=0.5,
-        score_threshold=0.3,
+        score_threshold=0.5,
         clip_boxes=False
     )
 
@@ -226,17 +225,28 @@ class YoloV3(keras.layers.Layer):
         self.yolo_out3 = YoloOutput(128, len(masks[2]), classes, kernel_regularizer=kernel_regularizer)
 
     def call(self, inputs, **kwargs):
-        x_36, x_61, x = self.darknet(inputs)
+        x, h, w = inputs
+        size = tf.cast(tf.concat([h, w], axis=-1), tf.float32)
+        x_36, x_61, x = self.darknet(x)
         x = self.yolo_conv1(x)
         output_0 = self.yolo_out1(x)
         x = self.yolo_conv2((x, x_61))
         output_1 = self.yolo_out2(x)
         x = self.yolo_conv3((x, x_36))
         output_2 = self.yolo_out3(x)
-        boxes_0 = yolo_boxes(output_0, self.anchors[self.masks[0]], self.classes)
-        boxes_1 = yolo_boxes(output_1, self.anchors[self.masks[1]], self.classes)
-        boxes_2 = yolo_boxes(output_2, self.anchors[self.masks[2]], self.classes)
-        boxes, scores, classes, valid_detections = yolo_nms((boxes_0[:3], boxes_1[:3], boxes_2[:3]))
+        anchor1 = self.anchors[self.masks[0]] / size
+        anchor2 = self.anchors[self.masks[1]] / size
+        anchor3 = self.anchors[self.masks[2]] / size
+        boxes_0 = yolo_boxes(output_0,
+                             anchor1,
+                             self.classes)
+        boxes_1 = yolo_boxes(output_1,
+                             anchor2,
+                             self.classes)
+        boxes_2 = yolo_boxes(output_2,
+                             anchor3,
+                             self.classes)
+        boxes, scores, classes, valid_detections = yolo_nms((boxes_0[:3], boxes_1[:3], boxes_2[:3]), h, w)
         return output_0, output_1, output_2, boxes, scores, classes, valid_detections
 
 
@@ -264,13 +274,15 @@ class YoloLoss(keras.losses.Loss):
         box_loss_scale = 2 - true_wh[..., 0] * true_wh[..., 1]
 
         # 3. inverting the pred box equations
-        grid_size = tf.shape(y_true)[1]
-        grid = tf.meshgrid(tf.range(grid_size), tf.range(grid_size))
+        grid_size_h = tf.shape(y_true)[1]
+        grid_size_w = tf.shape(y_true)[2]
+        grid = tf.meshgrid(tf.range(grid_size_w), tf.range(grid_size_h))
         grid = tf.expand_dims(tf.stack(grid, axis=-1), axis=2)
-        true_xy = true_xy * tf.cast(grid_size, true_xy.dtype) - \
+        true_xy = true_xy * tf.cast(tf.stack([grid_size_w, grid_size_h], axis=-1), true_xy.dtype) - \
                   tf.cast(grid, true_xy.dtype)
-
-        true_wh = tf.math.log(true_wh / self.anchors)
+        h = tf.cast(grid_size_h * 32, tf.float32)
+        w = tf.cast(grid_size_w * 32, tf.float32)
+        true_wh = tf.math.log(true_wh / tf.cast(self.anchors / tf.stack([h, w], axis=-1), true_wh.dtype))
         true_wh = tf.where(tf.math.is_inf(true_wh),
                            tf.zeros_like(true_wh), true_wh)
         # 4. calculate all masks
@@ -316,3 +328,4 @@ class YoloLoss(keras.losses.Loss):
         # obj_loss = tf.reduce_mean(obj_loss)
         # class_loss = tf.reduce_mean(class_loss)
         # return xy_loss + wh_loss + obj_loss + class_loss
+

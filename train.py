@@ -18,18 +18,20 @@ mixed_precision.set_policy(policy)
 
 config_file = open("./config/yolov3.yaml")
 params = yaml.load(config_file)
-params["anchors"] = np.asarray(params["anchors"]) / np.asarray(params["image_size"])
+params["anchors"] = np.asarray(params["anchors"])
 params["masks"] = np.asarray(params["masks"])
 anchors = params["anchors"]
 masks = params["masks"]
 
 image = keras.Input(shape=[None, None, 3], dtype=tf.float32, name='image')
+h = keras.Input(shape=[], dtype=tf.int32, name='h')
+w = keras.Input(shape=[], dtype=tf.int32, name='w')
 yolov3 = model.YoloV3(params['anchors'], params['masks'], params['classes'], name='yolov3',
                       kernel_regularizer=None)
-output_0, output_1, output_2, boxes, scores, classes, valid_detections = yolov3(image)
-yolo_model = keras.Model(inputs=[image], outputs=[output_0, output_1, output_2,
-                                                  boxes, scores, classes, valid_detections])
-yolo_model.load_weights('./checkpoints/yolov3_voc_7.ckpt')
+output_0, output_1, output_2, boxes, scores, classes, valid_detections = yolov3([image, h, w])
+yolo_model = keras.Model(inputs=[image, h, w], outputs=[output_0, output_1, output_2,
+                                                        boxes, scores, classes, valid_detections])
+# yolo_model.load_weights('./checkpoints/yolov3_voc_multiscale.ckpt')
 filenames = []
 for ele in open(params["test_files"][0]).readlines():
     filenames.append(ele.strip('\n'))
@@ -39,6 +41,8 @@ class DrawBoxCallBack(keras.callbacks.Callback):
     def __init__(self, thresh, outfile, update_frequency=500):
         super(DrawBoxCallBack, self).__init__()
         self.thresh = thresh
+        self.height = 608
+        self.width = 608
         self.writer = tf.summary.create_file_writer(outfile)
         self.update_frequency = update_frequency
 
@@ -51,8 +55,9 @@ class DrawBoxCallBack(keras.callbacks.Callback):
             img = cv2.imread(filenames[indices])
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             img = (img - 127.5) / 255.0
-            img_tensor = tf.image.resize_with_pad(tf.expand_dims(img, axis=0), 416, 416)
-            _, _, _, boxes, scores, classes, valid_detections = yolo_model(img_tensor)
+            img_tensor = tf.image.resize_with_pad(tf.expand_dims(img, axis=0), self.height, self.width)
+            _, _, _, boxes, scores, classes, valid_detections = yolo_model([img_tensor, tf.expand_dims(self.height, axis=-1),
+                                                                            tf.expand_dims(self.width, axis=-1)])
             image_data = np.squeeze(img_tensor.numpy(), axis=0)
             image_data = image_data * 255 + 127.5
             image_data = np.clip(image_data, 0, 255).astype(np.uint8)
@@ -109,16 +114,17 @@ class DrawBoxCallBack(keras.callbacks.Callback):
 
 dataset = input_fn(params["train_files"],
                    params["anchors"], params["masks"],
-                   params["classes"], params["image_size"],
                    params["batch_size"])
 val_dataset = input_fn(params["train_files"],
                        params["anchors"], params["masks"],
-                       params["classes"], params["image_size"],
                        params["batch_size"], training=False)
 yolo_model.compile(optimizer=keras.optimizers.Adam(),
-                   loss={'yolov3': model.YoloLoss(anchors[masks[0]], params["classes"]),
-                         'yolov3_1': model.YoloLoss(anchors[masks[1]], params["classes"]),
-                         'yolov3_2': model.YoloLoss(anchors[masks[2]], params["classes"])},
+                   loss={'yolov3': model.YoloLoss(anchors[masks[0]],
+                                                  params["classes"]),
+                         'yolov3_1': model.YoloLoss(anchors[masks[1]],
+                                                    params["classes"]),
+                         'yolov3_2': model.YoloLoss(anchors[masks[2]],
+                                                    params["classes"])},
                    loss_weights={'yolov3': 1,
                                  'yolov3_1': 1,
                                  'yolov3_2': 1})
