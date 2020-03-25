@@ -176,7 +176,8 @@ def yolo_boxes(pred, anchors, classes):
     pred_box = tf.concat([box_xy, box_wh], axis=-1)  # original xywh for loss
     grid = tf.meshgrid(tf.range(grid_size_w), tf.range(grid_size_h))
     grid = tf.expand_dims(tf.stack(grid, axis=-1), axis=2)  # [gx, gy, 1, 2]
-    box_xy = (box_xy + tf.cast(grid, box_xy.dtype))
+    box_xy = (box_xy + tf.cast(grid, box_xy.dtype)) / tf.cast(tf.stack([grid_size_w, grid_size_h], axis=-1),
+                                                              box_xy.dtype)
     box_wh = tf.exp(box_wh) * tf.cast(anchors, box_wh.dtype)
     box_x1y1 = box_xy - box_wh / 2
     box_x2y2 = box_xy + box_wh / 2
@@ -203,7 +204,7 @@ def yolo_nms(outputs, h, w):
         max_output_size_per_class=100,
         max_total_size=100,
         iou_threshold=0.5,
-        score_threshold=0.5,
+        score_threshold=0.01,
         clip_boxes=False
     )
 

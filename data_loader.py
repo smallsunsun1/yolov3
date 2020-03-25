@@ -210,7 +210,7 @@ def test_input_fn(filenames, batch_size=4, target_size=(608, 608)):
     dataset = dataset.batch(batch_size)
     dataset = dataset.map(lambda x: {"image": x,
                                      "h": tf.expand_dims(target_size[0], axis=-1),
-                                     "w": tf.expand_dims(target_size[1])}, 4)
+                                     "w": tf.expand_dims(target_size[1], axis=-1)}, 4)
     dataset = dataset.prefetch(-1)
     return dataset
 
