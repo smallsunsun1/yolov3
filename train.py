@@ -31,7 +31,7 @@ yolov3 = model.YoloV3(params['anchors'], params['masks'], params['classes'], nam
 output_0, output_1, output_2, boxes, scores, classes, valid_detections = yolov3([image, h, w])
 yolo_model = keras.Model(inputs=[image, h, w], outputs=[output_0, output_1, output_2,
                                                         boxes, scores, classes, valid_detections])
-yolo_model.load_weights('./checkpoints/yolov3_voc_4.ckpt')
+# yolo_model.load_weights('./checkpoints/yolov3_voc_3.ckpt')
 filenames = []
 for ele in open(params["test_files"][0]).readlines():
     filenames.append(ele.strip('\n'))
@@ -61,6 +61,7 @@ class DrawBoxCallBack(keras.callbacks.Callback):
             image_data = np.squeeze(img_tensor.numpy(), axis=0)
             image_data = image_data * 255 + 127.5
             image_data = np.clip(image_data, 0, 255).astype(np.uint8)
+            print(boxes)
             for k in range(len(valid_detections)):
                 for i in range(valid_detections[k]):
                     bbox = boxes[k][i]
@@ -81,70 +82,71 @@ class DrawBoxCallBack(keras.callbacks.Callback):
             tf.summary.image('detect_res', total_image, step=batch, max_outputs=5)
 
 
-test_dataset = test_input_fn(params['test_files'], 1)
-for idx, ele in enumerate(test_dataset):
-    _, _, _, boxes, scores, classes, valid_detections = yolo_model([ele['image'], ele['h'], ele['w']])
-    # _, _, _, boxes, scores, classes, valid_detections = yolo_model.predict(ele['image'])
-    # print(boxes)
-    print(scores)
-    print(boxes)
-    image_data = np.squeeze(ele['image'].numpy(), axis=0)
-    image_data = image_data * 255 + 127.5
-    image_data = np.clip(image_data, 0, 255).astype(np.uint8)
-    image_data = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
-    for k in range(len(valid_detections)):
-        for i in range(valid_detections[k]):
-            bbox = boxes[k][i]
-            print(bbox)
-            # print(classes[k][i])
-            # print(scores[k][i])
-            cv2.rectangle(image_data, (bbox[0], bbox[1]), (bbox[2], bbox[3]),
-                          (255, 0, 0), 1)
-            cv2.putText(image_data, "{:2.0f}".format(classes[k][i]), (bbox[0], bbox[1] - 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                        (0, 0, 255), 1)
-            cv2.putText(image_data, "{:.2f}".format(scores[k][i]), (bbox[0], bbox[1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                        (0, 255, 0), 1)
-    cv2.imwrite('./result/{}.jpg'.format(idx), image_data)
-    if idx == 10:
-        break
+# test_dataset = test_input_fn(params['test_files'], 1)
+# for idx, ele in enumerate(test_dataset):
+#     _, _, _, boxes, scores, classes, valid_detections = yolo_model([ele['image'], ele['h'], ele['w']])
+#     # _, _, _, boxes, scores, classes, valid_detections = yolo_model.predict(ele['image'])
+#     # print(boxes)
+#     print(scores)
+#     print(boxes)
+#     image_data = np.squeeze(ele['image'].numpy(), axis=0)
+#     image_data = image_data * 255 + 127.5
+#     image_data = np.clip(image_data, 0, 255).astype(np.uint8)
+#     image_data = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
+#     for k in range(len(valid_detections)):
+#         for i in range(valid_detections[k]):
+#             bbox = boxes[k][i]
+#             print(bbox)
+#             # print(classes[k][i])
+#             # print(scores[k][i])
+#             cv2.rectangle(image_data, (bbox[0], bbox[1]), (bbox[2], bbox[3]),
+#                           (255, 0, 0), 1)
+#             cv2.putText(image_data, "{:2.0f}".format(classes[k][i]), (bbox[0], bbox[1] - 20),
+#                         cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+#                         (0, 0, 255), 1)
+#             cv2.putText(image_data, "{:.2f}".format(scores[k][i]), (bbox[0], bbox[1] - 10),
+#                         cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+#                         (0, 255, 0), 1)
+#     cv2.imwrite('./result/{}.jpg'.format(idx), image_data)
+#     if idx == 10:
+#         break
 
-# dataset = input_fn(params["train_files"],
-#                    params["anchors"], params["masks"],
-#                    params["batch_size"])
-# val_dataset = input_fn(params["train_files"],
-#                        params["anchors"], params["masks"],
-#                        params["batch_size"], training=False)
-# yolo_model.compile(optimizer=keras.optimizers.Adam(),
-#                    loss={'yolov3': model.YoloLoss(anchors[masks[0]],
-#                                                   params["classes"]),
-#                          'yolov3_1': model.YoloLoss(anchors[masks[1]],
-#                                                     params["classes"]),
-#                          'yolov3_2': model.YoloLoss(anchors[masks[2]],
-#                                                     params["classes"])},
-#                    loss_weights={'yolov3': 1,
-#                                  'yolov3_1': 1,
-#                                  'yolov3_2': 1})
-#
-#
-# def schedule(epoch):
-#     if epoch < 45:
-#         return 0.001
-#     elif epoch < 55:
-#         return 0.0001
-#     else:
-#         return 0.00001
-#
-#
-# yolo_model.fit(dataset, steps_per_epoch=3000, epochs=60,
-#                callbacks=[
-#                    keras.callbacks.LearningRateScheduler(schedule=schedule),
-#                    keras.callbacks.ModelCheckpoint('checkpoints/yolov3_voc_{epoch}.ckpt',
-#                                                    verbose=1, save_weights_only=True),
-#                    keras.callbacks.TensorBoard(log_dir='logs', update_freq=100,
-#                                                profile_batch=0),
-#                    DrawBoxCallBack(0.5, './logs')
-#                ],
-#                validation_data=val_dataset, validation_steps=1000
-#                )
+
+dataset = input_fn(params["train_files"],
+                   params["anchors"], params["masks"],
+                   params["batch_size"])
+val_dataset = input_fn(params["train_files"],
+                       params["anchors"], params["masks"],
+                       params["batch_size"], training=False)
+yolo_model.compile(optimizer=keras.optimizers.Adam(),
+                   loss={'yolov3': model.YoloLoss(anchors[masks[0]],
+                                                  params["classes"]),
+                         'yolov3_1': model.YoloLoss(anchors[masks[1]],
+                                                    params["classes"]),
+                         'yolov3_2': model.YoloLoss(anchors[masks[2]],
+                                                    params["classes"])},
+                   loss_weights={'yolov3': 1,
+                                 'yolov3_1': 1,
+                                 'yolov3_2': 1})
+
+
+def schedule(epoch):
+    if epoch < 45:
+        return 0.001
+    elif epoch < 55:
+        return 0.0001
+    else:
+        return 0.00001
+
+
+yolo_model.fit(dataset, steps_per_epoch=3000, epochs=60,
+               callbacks=[
+                   keras.callbacks.LearningRateScheduler(schedule=schedule),
+                   keras.callbacks.ModelCheckpoint('checkpoints/yolov3_voc_{epoch}.ckpt',
+                                                   verbose=1, save_weights_only=True),
+                   keras.callbacks.TensorBoard(log_dir='logs', update_freq=100,
+                                               profile_batch=0),
+                   DrawBoxCallBack(0.5, './logs')
+               ],
+               validation_data=val_dataset, validation_steps=1000
+               )

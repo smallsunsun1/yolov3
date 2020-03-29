@@ -204,7 +204,7 @@ def yolo_nms(outputs, h, w):
         max_output_size_per_class=100,
         max_total_size=100,
         iou_threshold=0.5,
-        score_threshold=0.01,
+        score_threshold=0.1,
         clip_boxes=False
     )
 
@@ -252,11 +252,12 @@ class YoloV3(keras.layers.Layer):
 
 
 class YoloLoss(keras.losses.Loss):
-    def __init__(self, anchors, classes=80, ignore_thresh=0.5, **kwargs):
+    def __init__(self, anchors, classes=80, scale = 32, ignore_thresh=0.5, **kwargs):
         super(YoloLoss, self).__init__(**kwargs)
         self.anchors = anchors
         self.classes = classes
         self.ignore_thresh = ignore_thresh
+        self.scale = scale
 
     def call(self, y_true, y_pred):
         # 1. transform all pred outputs
@@ -281,8 +282,8 @@ class YoloLoss(keras.losses.Loss):
         grid = tf.expand_dims(tf.stack(grid, axis=-1), axis=2)
         true_xy = true_xy * tf.cast(tf.stack([grid_size_w, grid_size_h], axis=-1), true_xy.dtype) - \
                   tf.cast(grid, true_xy.dtype)
-        h = tf.cast(grid_size_h * 32, tf.float32)
-        w = tf.cast(grid_size_w * 32, tf.float32)
+        h = tf.cast(grid_size_h * self.scale, tf.float32)
+        w = tf.cast(grid_size_w * self.scale, tf.float32)
         true_wh = tf.math.log(true_wh / tf.cast(self.anchors / tf.stack([h, w], axis=-1), true_wh.dtype))
         true_wh = tf.where(tf.math.is_inf(true_wh),
                            tf.zeros_like(true_wh), true_wh)

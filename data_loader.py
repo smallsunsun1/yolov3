@@ -1,7 +1,6 @@
 import tensorflow as tf
 import numpy as np
 import cv2
-import os
 
 import augment
 
@@ -14,6 +13,7 @@ def read_and_scale_image(path, target_size):
     return image
 
 
+@tf.function
 def transform_img_and_boxes(lines, target_size, training=True):
     """
     :param imagename:
@@ -51,38 +51,44 @@ def transform_img_and_boxes(lines, target_size, training=True):
     box_r = (boxes[:, 2] * tf.cast(img_w, tf.float32) * scale + tf.cast(pad_w_left, tf.float32)) / target_w
     box_t = (boxes[:, 1] * tf.cast(img_h, tf.float32) * scale + tf.cast(pad_h_top, tf.float32)) / target_h
     box_b = (boxes[:, 3] * tf.cast(img_h, tf.float32) * scale + tf.cast(pad_h_top, tf.float32)) / target_h
-    coordinate = tf.stack([box_t, box_l, box_b, box_r], axis=-1)
-    coordinate = tf.clip_by_value(coordinate, 0, 1)
+    # coordinate = tf.stack([box_t, box_l, box_b, box_r], axis=-1)
+    # coordinate = tf.clip_by_value(coordinate, 0, 1)
     if training:
-        image, coordinate = augment.distort_image_with_autoaugment(image, coordinate, 'v0')
-    # p1 = tf.random.uniform([], 0, 10)
-    # p2 = tf.random.uniform([], 0, 10)
-    # image = tf.image.random_brightness(image, 0.1)
-    # image = tf.image.random_contrast(image, 0.1, 0.2)
-    # image = tf.image.random_hue(image, 0.1)
-    # image = tf.clip_by_value(tf.cast(image, tf.float32), 0, 255)
-    # cond1 = tf.greater(p1, 5.0)
-    # cond2 = tf.greater(p2, 5.0)
-    #
-    # def flip_left_right(image, box_l, box_r, box_t, box_b):
-    #     image = tf.image.flip_left_right(image)
-    #     box_l = 1.0 - box_l
-    #     box_r = 1.0 - box_r
-    #     return image, box_r, box_l, box_t, box_b
-    #
-    # def flip_top_down(image, box_l, box_r, box_t, box_b):
-    #     image = tf.image.flip_up_down(image)
-    #     box_t = 1.0 - box_t
-    #     box_b = 1.0 - box_b
-    #     return image, box_l, box_r, box_b, box_t
-    #
-    # image, box_l, box_r, box_t, box_b = tf.cond(cond1, lambda: flip_left_right(image, box_l, box_r, box_t, box_b),
-    #                                             lambda: (image, box_l, box_r, box_t, box_b))
-    # image, box_l, box_r, box_t, box_b = tf.cond(cond2, lambda: flip_top_down(image, box_l, box_r, box_t, box_b),
-    #                                             lambda: (image, box_l, box_r, box_t, box_b))
-    boxes = tf.stack([coordinate[:, 1], coordinate[:, 0], coordinate[:, 3], coordinate[:, 2], boxes[:, 4]], axis=-1)
+        # image, coordinate = augment.distort_image_with_autoaugment(image, coordinate, 'v0')
+        p1 = tf.random.uniform([], 0, 10)
+        p2 = tf.random.uniform([], 0, 10)
+        p_b = tf.random.uniform([], 0, 10)
+        p_c = tf.random.uniform([], 0, 10)
+        p_h = tf.random.uniform([], 0, 10)
+        if tf.greater(p_b, 5):
+            image = tf.image.random_brightness(image, 0.1)
+        if tf.greater(p_c, 5):
+            image = tf.image.random_contrast(image, 0.1, 0.2)
+        if tf.greater(p_h, 5):
+            image = tf.image.random_hue(image, 0.1)
+        image = tf.clip_by_value(tf.cast(image, tf.float32), 0, 255)
+        cond1 = tf.greater(p1, 5.0)
+        cond2 = tf.greater(p2, 5.0)
+
+        def flip_left_right(image, box_l, box_r, box_t, box_b):
+            image = tf.image.flip_left_right(image)
+            box_l = 1.0 - box_l
+            box_r = 1.0 - box_r
+            return image, box_r, box_l, box_t, box_b
+
+        def flip_top_down(image, box_l, box_r, box_t, box_b):
+            image = tf.image.flip_up_down(image)
+            box_t = 1.0 - box_t
+            box_b = 1.0 - box_b
+            return image, box_l, box_r, box_b, box_t
+
+        image, box_l, box_r, box_t, box_b = tf.cond(cond1, lambda: flip_left_right(image, box_l, box_r, box_t, box_b),
+                                                    lambda: (image, box_l, box_r, box_t, box_b))
+        image, box_l, box_r, box_t, box_b = tf.cond(cond2, lambda: flip_top_down(image, box_l, box_r, box_t, box_b),
+                                                    lambda: (image, box_l, box_r, box_t, box_b))
+    # boxes = tf.stack([coordinate[:, 1], coordinate[:, 0], coordinate[:, 3], coordinate[:, 2], boxes[:, 4]], axis=-1)
     image.set_shape([None, None, 3])
-    # boxes = tf.stack([box_l, box_t, box_r, box_b, boxes[:, 4]], axis=1)
+    boxes = tf.stack([box_l, box_t, box_r, box_b, boxes[:, 4]], axis=1)
     return tf.cast(image, tf.float32), boxes
 
 
@@ -107,7 +113,7 @@ def transform_targets_for_output(y_true, grid_size_h, grid_size_w, anchor_idxs, 
             if tf.reduce_any(anchor_eq):
                 box = y_true[i][j][0:4]
                 box_xy = (y_true[i][j][0:2] + y_true[i][j][2:4]) / 2
-
+                box_xy = tf.clip_by_value(box_xy, 0.0, 0.99999)
                 anchor_idx = tf.cast(tf.where(anchor_eq), tf.int32)
                 grid_xy = tf.cast(box_xy // (1 / tf.stack([grid_size_w, grid_size_h], axis=-1)), tf.int32)
                 indexes = indexes.write(
@@ -222,9 +228,11 @@ if __name__ == "__main__":
     yolo_anchor_masks = np.array([[6, 7, 8], [3, 4, 5], [0, 1, 2]])
     filename = "/home/sunjiahe/Datasets/VOCDataset/yolo_train.txt"
     # output_dir = "/home/admin-seu/hugh/yolov3-tf2/temp_file"
-    dataset = input_fn(filename, yolo_anchors, yolo_anchor_masks, batch_size=4)
+    dataset = input_fn(filename, yolo_anchors, yolo_anchor_masks, batch_size=1)
     for idx, ele in enumerate(dataset):
-        print(ele[0])
+        print(ele[0]['image'])
+        image = ele[0]['image'].numpy()
+        cv2.imwrite('./result/{}.jpg'.format(idx), cv2.cvtColor(image[0], cv2.COLOR_BGR2RGB))
         # data = tf.reduce_max(ele[1]['yolov3'], axis=-1)
         # indices = tf.where(tf.not_equal(data, 0))
         # print(tf.gather_nd(data, indices))
